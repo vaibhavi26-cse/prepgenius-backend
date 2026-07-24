@@ -1,5 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
+import dns from "node:dns";
+dns.setDefaultResultOrder("ipv4first");
 import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
@@ -18,6 +20,7 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import searchRoutes from "./routes/searchRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import dashboardGoalRoutes from "./routes/dashboardGoalRoutes.js";
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
