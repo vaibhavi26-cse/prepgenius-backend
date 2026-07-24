@@ -23,6 +23,7 @@
     "multer": "^2.2.0",
     "nodemailer": "^9.0.3",
     "pdf-parse": "^2.4.5",
+    "resend": "^6.18.0",
     "streamifier": "^0.1.1"
   }
 }
