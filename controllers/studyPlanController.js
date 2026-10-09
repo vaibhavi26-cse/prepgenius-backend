@@ -101,7 +101,7 @@ Respond with ONLY valid JSON, no markdown fences, in exactly this shape:
 Include exactly ${totalWeeks} week entries.
 `.trim();
 
-    const maxTokens = Math.min(8000, 800 + totalWeeks * 150);
+   const maxTokens = Math.min(12000, 3000 + totalWeeks * 200);
     const cleaned = await callGemini(prompt, maxTokens);
     const parsed = JSON.parse(cleaned);
 
