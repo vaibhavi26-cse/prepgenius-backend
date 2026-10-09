@@ -14,33 +14,52 @@ function extractJSON(rawText) {
   return rawText.slice(start, end + 1);
 }
 
+const MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash"];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function callGemini(prompt, maxTokens = 2000) {
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: maxTokens,
-          responseMimeType: "application/json",
+  const MAX_ATTEMPTS = 2;
+
+  for (const model of MODELS) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: maxTokens,
+              responseMimeType: "application/json",
+            },
+          }),
         },
-      }),
-    },
-  );
-  const data = await geminiRes.json();
-  if (!geminiRes.ok) {
-    console.error("Gemini API error:", data);
-    throw new Error(data?.error?.message || "AI request failed.");
+      );
+      const data = await geminiRes.json();
+
+      if (geminiRes.ok) {
+        const rawText =
+          data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ||
+          "";
+        return extractJSON(rawText);
+      }
+
+      console.error(`Gemini API error (${model}, attempt ${attempt}):`, data);
+
+      const isBusy = [500, 503, 504].includes(geminiRes.status);
+      if (!isBusy) {
+        throw new Error(data?.error?.message || "AI request failed.");
+      }
+
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(attempt * 1500);
+      }
+    }
   }
-  if (!data?.candidates?.length) {
-    console.error("Gemini returned no candidates:", JSON.stringify(data));
-  }
-  const rawText =
-    data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
-  return extractJSON(rawText);
+
+  throw new Error("AI is busy right now. Please try again in a moment.");
 }
 
 function weeksForDuration(duration) {
