@@ -36,48 +36,57 @@ function extractJSON(rawText) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const MODELS = ["gemini-flash-latest", "gemini-2.5-flash-lite"];
 
+const MODELS = ["gemini-flash-latest", "gemini-2.5-flash-lite"];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function callGemini(prompt) {
   const MAX_ATTEMPTS = 2;
 
   for (const model of MODELS) {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 1500,
-            responseMimeType: "application/json",
-          },
-        }),
-      },
-    );
-    const data = await geminiRes.json();
+      const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 1500,
+              responseMimeType: "application/json",
+            },
+          }),
+        },
+      );
+      const data = await geminiRes.json();
 
-    // Success: return the JSON like before
-    if (geminiRes.ok) {
-      const rawText =
-        data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
-      return extractJSON(rawText);
+      // Success
+      if (geminiRes.ok) {
+        const rawText =
+          data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ||
+          "";
+        return extractJSON(rawText);
+      }
+
+      console.error(`Gemini API error (${model}, attempt ${attempt}):`, data);
+
+      // Not a "busy" error (e.g. quota, bad key): fail right away
+      const isBusy = [500, 503, 504].includes(geminiRes.status);
+      if (!isBusy) {
+        throw new Error(data?.error?.message || "AI request failed.");
+      }
+
+      // Busy: wait a bit, then retry (or move on to the next model)
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(attempt * 1500);
+      }
     }
-
-    console.error(`Gemini API error (attempt ${attempt}):`, data);
-
-    // Google is busy (503/500/504) and we have attempts left: wait, then retry
-    const isBusy = [500, 503, 504].includes(geminiRes.status);
-    if (isBusy && attempt < MAX_ATTEMPTS) {
-      await sleep(attempt * 1500); // waits 1.5s, then 3s
-      continue;
-    }
-
-    throw new Error(data?.error?.message || "AI request failed.");
   }
-}
 
+  // Both models failed
+  throw new Error("AI is busy right now. Please try again in a moment.");
+}
 function historyToTranscript(history) {
   return history
     .map(
