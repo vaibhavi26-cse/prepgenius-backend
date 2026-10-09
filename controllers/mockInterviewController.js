@@ -34,7 +34,7 @@ function extractJSON(rawText) {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const MODELS = ["gemini-flash-latest", "gemini-2.5-flash-lite"];
+const MODELS = [, "gemini-2.5-flash-lite","gemini-flash-latest"];
 
 async function callGemini(prompt) {
   const MAX_ATTEMPTS = 2;
