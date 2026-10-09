@@ -33,34 +33,47 @@ function extractJSON(rawText) {
   return rawText.slice(start, end + 1);
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function callGemini(prompt) {
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-  temperature: 0.7,
-  maxOutputTokens: 1500,
-  responseMimeType: "application/json",
-},
-      }),
-    },
-  );
-  const data = await geminiRes.json();
-  if (!geminiRes.ok) {
-    console.error("Gemini API error:", data);
+  const MAX_ATTEMPTS = 3;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1500,
+            responseMimeType: "application/json",
+          },
+        }),
+      },
+    );
+    const data = await geminiRes.json();
+
+    // Success: return the JSON like before
+    if (geminiRes.ok) {
+      const rawText =
+        data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
+      return extractJSON(rawText);
+    }
+
+    console.error(`Gemini API error (attempt ${attempt}):`, data);
+
+    // Google is busy (503/500/504) and we have attempts left: wait, then retry
+    const isBusy = [500, 503, 504].includes(geminiRes.status);
+    if (isBusy && attempt < MAX_ATTEMPTS) {
+      await sleep(attempt * 1500); // waits 1.5s, then 3s
+      continue;
+    }
+
     throw new Error(data?.error?.message || "AI request failed.");
   }
-  if (!data?.candidates?.length) {
-    console.error("Gemini returned no candidates:", JSON.stringify(data));
-  }
-  
-const rawText =
-  data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
-return extractJSON(rawText);
 }
 
 function historyToTranscript(history) {
