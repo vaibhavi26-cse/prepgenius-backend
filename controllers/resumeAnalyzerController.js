@@ -46,6 +46,53 @@ async function extractText(file) {
   const result = await mammoth.extractRawText({ buffer: file.buffer });
   return result.value;
 }
+const MODELS = ["gemini-3.5-flash-lite", "gemini-3.5-flash"];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function callGemini(prompt, maxTokens = 4000) {
+  const MAX_ATTEMPTS = 2;
+
+  for (const model of MODELS) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.4,
+              maxOutputTokens: maxTokens,
+              responseMimeType: "application/json",
+            },
+          }),
+        },
+      );
+      const data = await geminiRes.json();
+
+      if (geminiRes.ok) {
+        return (
+          data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") ||
+          ""
+        );
+      }
+
+      console.error(`Gemini API error (${model}, attempt ${attempt}):`, data);
+
+      const isBusy = [500, 503, 504].includes(geminiRes.status);
+      if (!isBusy) {
+        throw new Error(data?.error?.message || "AI request failed.");
+      }
+
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(attempt * 1500);
+      }
+    }
+  }
+
+  throw new Error("AI is busy right now. Please try again in a moment.");
+}
 
 export const analyzeResume = async (req, res) => {
   try {
@@ -118,45 +165,10 @@ Base "keywords" and "keywordGaps" on comparing the resume against the specific j
 Be honest and specific — reference actual content from the resume in suggestions where possible.
 `.trim();
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.4, maxOutputTokens: 2500 },
-        }),
-      },
-    );
+    
 
-    const data = await geminiRes.json();
-
-    if (!geminiRes.ok) {
-      console.error("Gemini API error:", data);
-      const rawMessage = data?.error?.message || "";
-      const isQuotaError =
-        rawMessage.includes("quota") ||
-        rawMessage.includes("RESOURCE_EXHAUSTED");
-      if (isQuotaError) {
-        return res.status(429).json({
-          success: false,
-          quotaExceeded: true,
-          message:
-            "Daily AI usage limit reached. Please try again later or tomorrow.",
-        });
-      }
-      return res
-        .status(502)
-        .json({
-          success: false,
-          message: "AI analysis failed. Please try again.",
-        });
-    }
-
-    const rawText =
-      data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
-    const cleaned = rawText.replace(/```json|```/g, "").trim();
+    const rawText = await callGemini(prompt);
+const cleaned = rawText.replace(/```json|```/g, "").trim();
 
     let parsed;
     try {
